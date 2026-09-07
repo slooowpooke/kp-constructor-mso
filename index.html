@@ -336,7 +336,7 @@ img.ph{object-fit:contain;background:var(--tint2);padding:6px}
   .tb-sub{display:none}
   .tb-chip{max-width:none;flex:1;min-width:0}
   .tb-r{flex:1;justify-content:flex-end}
-  .body{padding:14px 16px 92px;gap:14px}
+  .body{padding:14px 16px calc(var(--mbar-h, 132px) + 12px);gap:14px}
   .actions{position:static;flex-wrap:wrap;gap:10px}
   .side{display:none}
   .m-only{display:block}
@@ -920,6 +920,14 @@ function renderMbar(){
   E("mbarNext").disabled=currentStep===LAST;
   E("mbarNext").textContent=next?`Далее: ${next.short}`:"Готово";
   E("mbarProg").style.width=Math.round(completedCount()/LAST*100)+"%";
+  syncMbarPad();
+}
+function syncMbarPad(){
+  const mbar=document.querySelector(".mbar");
+  if(!mbar)return;
+  requestAnimationFrame(()=>{
+    document.documentElement.style.setProperty("--mbar-h",mbar.offsetHeight+"px");
+  });
 }
 function completedCount(){return STEPS.filter(s=>stepDone(s.n)).length}
 /* ==========================================================================
@@ -1833,7 +1841,8 @@ document.addEventListener("keydown",e=>{
   if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){e.preventDefault();goStep(currentStep+1)}
   else if(e.key==="Escape"&&E("sheetBg").style.display==="block")E("sheetBg").style.display="none";
 });
-window.addEventListener("resize",()=>{if(currentStep===LAST)fitPreview()});
+window.addEventListener("resize",()=>{if(currentStep===LAST)fitPreview();syncMbarPad()});
+window.addEventListener("orientationchange",syncMbarPad);
 
 try{if(sessionStorage.getItem("dkr_unlocked")==="1")unlockSite()}catch(e){}
 </script>
