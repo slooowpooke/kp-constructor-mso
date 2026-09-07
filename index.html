@@ -57,6 +57,8 @@ input::placeholder,textarea::placeholder{color:var(--mut4);opacity:1}
 .chip:hover{border-color:#9db3c8}
 .chip.done{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-b);font-weight:600}
 .chip.done .n{color:var(--ok)}
+.chip.warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn);font-weight:600}
+.chip.warn .n{color:var(--warn)}
 .chip.cur{background:var(--blue);color:#fff;border-color:var(--blue);padding:7px 12px;font-weight:650}
 .chip.cur .n{width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff}
 
@@ -160,9 +162,14 @@ img.ph{object-fit:contain;background:var(--tint2);padding:6px}
 .box{width:20px;height:20px;border-radius:6px;border:1px solid #cfd8e2;flex:none;background:#fff}
 .tile.on .box{border-radius:50%;border:0;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
 .tile.on .box::after{content:"✓"}
+.tile.warn.on{border-color:var(--warn);background:var(--warn-bg)}
+.tile.warn.on .box{background:var(--warn)}
+.tile .need{color:var(--warn);font-weight:700}
 
 /* sub-config block */
 .sub{border:1px solid var(--b5);border-radius:11px;background:var(--tint3);padding:13px 14px;margin-top:12px}
+.sub.warn{border:1px solid var(--warn);background:var(--warn-bg)}
+.sub-warn{font-size:12.5px;font-weight:650;color:var(--warn);background:#fff;border:1px solid var(--warn);border-radius:8px;padding:8px 11px;margin-bottom:12px}
 .sub-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
 .sub-head .t{font-size:13.5px;font-weight:700}
 .sub-head .s{font-size:12px;color:var(--mut)}
@@ -432,6 +439,7 @@ img.ph{object-fit:contain;background:var(--tint2);padding:6px}
     </div>
     <div class="side-list" id="sheetList"></div>
     <div class="side-tot" id="sheetTot"></div>
+    <div id="sheetAct"></div>
   </div>
 </div>
 <script>
@@ -558,7 +566,7 @@ const LAST=12;
 let project="",client="",contact="",posts=6,notes="";
 
 /* конфигурация (существующая логика расчёта) */
-let pkg=null,bum=null,payments=new Set(),selectedFuncs=new Set(),chemType="",winter="1",degreaserType="";
+let pkg=null,bum=null,payments=new Set(),selectedFuncs=new Set(),chemType="",winter="",degreaserType="";
 let osmosSysOn=false,osmosSysId="",softenerOn=false,softenerPrice=0,selectedExtra=new Set(),extraQty={};
 let dryMistOn=false,dryMistAromas=2,dryMistPays=new Set(["cash","card","qr","client"]),cloudCashOn=false;
 let vacOn=false,vacQty=null,vacModelId="",vacSt1On=false,vacSt1Qty=1,vacSt1Addons=new Set();
@@ -587,6 +595,15 @@ function funcPosts(id){
 }
 function accBase(id){return accPrices[id].mult*P()}
 function accValue(id){return accQty[id]==null?accBase(id):accQty[id]}
+
+/* функции, требующие обязательного уточнения варианта после выбора */
+function funcIncomplete(id){
+  if(id==="chem")return !chemType||chemTypesSelected.size===0;
+  if(id==="winter")return !winter;
+  if(id==="degreaser")return !degreaserType;
+  return false;
+}
+function anyFuncIncomplete(){return [...selectedFuncs].some(funcIncomplete)}
 
 /* ==========================================================================
    Единый источник истины: состав КП
@@ -695,9 +712,11 @@ function buildItems(){
     if(!selectedFuncs.has(id))return;
     const f=funcs.find(x=>x.id===id),q=funcPosts(id);
     if(id==="winter"){
-      const unit=winterPrices[winter];
-      const d=winter==="1"?"1 пистолет · игольчатый кран + зимний курок":"2 пистолета · 2 клапана высокого давления";
-      add({id:"f_winter",step:5,name:"Зимний режим",desc:d,sub:`${q} × ${money(unit)}`,qty:q,price:unit,sum:unit*q});
+      const unit=winterPrices[winter]||0;
+      const d=winter==="1"?"1 пистолет · игольчатый кран + зимний курок"
+        :winter==="2"?"2 пистолета · 2 клапана высокого давления":"Вариант не выбран";
+      add({id:"f_winter",step:5,name:"Зимний режим",desc:d,
+        sub:winter?`${q} × ${money(unit)}`:"вариант не выбран",qty:q,price:unit,sum:unit*q,unclear:!winter});
       return;
     }
     if(id==="degreaser"){
@@ -817,9 +836,10 @@ function stepSummary(n){
 function renderRail(){
   const rail=E("rail");
   rail.innerHTML=STEPS.map(s=>{
-    const done=stepDone(s.n)&&s.n!==currentStep;
-    const cls=s.n===currentStep?"chip cur":done?"chip done":"chip";
-    const mark=s.n===currentStep?s.n:done?"✓":s.n;
+    const warn=s.n===5&&anyFuncIncomplete();
+    const done=stepDone(s.n)&&s.n!==currentStep&&!warn;
+    const cls=s.n===currentStep?"chip cur":warn?"chip warn":done?"chip done":"chip";
+    const mark=s.n===currentStep?s.n:warn?"!":done?"✓":s.n;
     return `<button class="${cls}" data-step="${s.n}"><span class="n">${mark}</span>${esc(s.short)}</button>`;
   }).join("");
   rail.querySelectorAll("[data-step]").forEach(b=>b.onclick=()=>goStep(+b.dataset.step));
@@ -864,25 +884,37 @@ function renderSide(){
     <div class="side-head"><div class="t">${ready?"Готово к отправке":"Состав КП"}</div><div class="c">${paid.length} позиц${paid.length===1?"ия":paid.length<5&&paid.length>0?"ии":"ий"}</div></div>
     ${body}
     <div class="side-tot">${totalsHtml(d)}</div>
-    <div class="side-act">
-      <button class="make" id="btnMake">Сформировать КП</button>
-      <div class="exp"><button id="btnPdf">PDF</button><button id="btnWord">Word</button><button id="btnExcel">Excel</button></div>
-      ${currentStep===LAST?`<button class="link" id="btnLink">Скопировать ссылку на КП</button>`:""}
-      <button class="clr" id="btnClear">Очистить черновик</button>
-    </div>`;
-  bindSideActions();
+    ${sideActHtml("")}`;
   E("sheetList").innerHTML=list;
   E("sheetTot").innerHTML=totalsHtml(d);
+  E("sheetAct").innerHTML=sideActHtml("M");
+  bindSideActions();
   E("mbarTotal").textContent=money(d.total);
   E("mbarLabel").textContent=`Итого · ${paid.length} позиц${paid.length===1?"ия":paid.length<5&&paid.length>0?"ии":"ий"}`;
 }
+function sideActHtml(sfx){
+  return `<div class="side-act">
+      <button class="make" id="btnMake${sfx}">Сформировать КП</button>
+      <div class="exp"><button id="btnPdf${sfx}">PDF</button><button id="btnWord${sfx}">Word</button><button id="btnExcel${sfx}">Excel</button></div>
+      ${currentStep===LAST?`<button class="link" id="btnLink${sfx}">Скопировать ссылку на КП</button>`:""}
+      <button class="clr" id="btnClear${sfx}">Очистить черновик</button>
+    </div>`;
+}
+function closeSheet(){if(E("sheetBg"))E("sheetBg").style.display="none"}
 function bindSideActions(){
-  E("btnMake").onclick=()=>{if(currentStep!==LAST)goStep(LAST);else renderMain()};
-  E("btnPdf").onclick=exportPdf;
-  E("btnWord").onclick=exportWord;
-  E("btnExcel").onclick=exportExcel;
-  E("btnClear").onclick=clearDraft;
-  if(E("btnLink"))E("btnLink").onclick=copyLink;
+  bindAct("");
+  bindAct("M");
+}
+function bindAct(sfx){
+  const make=E("btnMake"+sfx);
+  if(!make)return;
+  const wrap=fn=>()=>{fn();closeSheet()};
+  make.onclick=wrap(()=>{if(currentStep!==LAST)goStep(LAST);else renderMain()});
+  E("btnPdf"+sfx).onclick=wrap(exportPdf);
+  E("btnWord"+sfx).onclick=wrap(exportWord);
+  E("btnExcel"+sfx).onclick=wrap(exportExcel);
+  E("btnClear"+sfx).onclick=wrap(clearDraft);
+  if(E("btnLink"+sfx))E("btnLink"+sfx).onclick=()=>copyLink(sfx);
 }
 
 /* подсветка изменённых строк */
@@ -899,7 +931,10 @@ function goStep(n){
   currentStep=Math.min(LAST,Math.max(1,n));
   visited.add(currentStep);
   renderAll();
-  E("main").scrollTop=0;
+  if(E("main"))E("main").scrollTop=0;
+  window.scrollTo(0,0);
+  document.documentElement.scrollTop=0;
+  document.body.scrollTop=0;
   saveDraft();
 }
 function renderAll(){
@@ -1086,17 +1121,21 @@ function stepContent(n){
     case 5:{
       let h=`<div class="tiles">${funcs.map(f=>{
         const on=selectedFuncs.has(f.id);
-        return `<button class="tile ${on?"on":""}" data-func="${f.id}">
-          <span><span class="nm">${esc(f.name)}</span>
+        const need=on&&funcIncomplete(f.id);
+        return `<button class="tile ${on?"on":""} ${need?"warn":""}" data-func="${f.id}">
+          <span><span class="nm">${esc(f.name)}${need?` <span class="need">· выберите вариант</span>`:""}</span>
           <span class="ds" style="display:block">${esc(f.desc)}</span>
           ${f.price?`<span class="pr" style="display:block">${money(f.price)} / пост</span>`
-                   :`<span class="prt" style="display:block">${on?"настроить ниже →":"цена по конфигурации"}</span>`}</span>
+                   :`<span class="prt" style="display:block">${need?"⚠ настройте ниже":on?"настроить ниже →":"цена по конфигурации"}</span>`}</span>
           <span class="box"></span>
         </button>`;
       }).join("")}</div>`;
 
-      if(selectedFuncs.has("chem"))h+=`<div class="sub">
+      if(selectedFuncs.has("chem")){
+        const incomplete=funcIncomplete("chem");
+        h+=`<div class="sub ${incomplete?"warn":""}">
         <div class="sub-head"><div class="t">Виды химии</div><div class="s">на каждый пост · ${P()} постов</div></div>
+        ${incomplete?`<div class="sub-warn">⚠ Выберите дозатор и хотя бы один вид химии — иначе позиция не попадёт в КП</div>`:""}
         <div class="field" style="max-width:320px;margin-bottom:10px"><label>Дозатор</label>
           <select id="fChemType">
             <option value="">Выберите дозатор</option>
@@ -1107,9 +1146,13 @@ function stepContent(n){
           const on=chemTypesSelected.has(nm),unit=chemType==="SECO"?38000:chemType==="ULKA"?28000:0;
           return `<button class="pill ${on?"on":""}" data-chem="${esc(nm)}">${esc(nm)}${on&&unit?` <span>· ${num(unit)} ₽</span>`:""}</button>`;
         }).join("")}</div></div>`;
+      }
 
-      if(selectedFuncs.has("winter"))h+=`<div class="sub">
+      if(selectedFuncs.has("winter")){
+        const incomplete=funcIncomplete("winter");
+        h+=`<div class="sub ${incomplete?"warn":""}">
         <div class="sub-head"><div class="t">Зимний режим</div><div class="s">на каждый пост</div></div>
+        ${incomplete?`<div class="sub-warn">⚠ Выберите количество пистолетов — иначе позиция не попадёт в КП</div>`:""}
         <div class="radios">
           <label class="radioline ${winter==="1"?"on":""}"><span>1 пистолет · игольчатый кран + зимний курок</span>
             <span style="display:flex;align-items:center;gap:10px"><b class="mono">${money(winterPrices["1"])}</b>
@@ -1118,15 +1161,20 @@ function stepContent(n){
             <span style="display:flex;align-items:center;gap:10px"><b class="mono">${money(winterPrices["2"])}</b>
             <input type="radio" name="winter" value="2" ${winter==="2"?"checked":""}></span></label>
         </div></div>`;
+      }
 
-      if(selectedFuncs.has("degreaser"))h+=`<div class="sub">
+      if(selectedFuncs.has("degreaser")){
+        const incomplete=funcIncomplete("degreaser");
+        h+=`<div class="sub ${incomplete?"warn":""}">
         <div class="sub-head"><div class="t">Обезжириватель</div><div class="s">кнопка, реле, дозатор</div></div>
+        ${incomplete?`<div class="sub-warn">⚠ Выберите дозатор — иначе позиция не попадёт в КП</div>`:""}
         <div class="field" style="max-width:320px"><label>Дозатор</label>
           <select id="fDegType">
             <option value="">Выберите дозатор</option>
             <option value="SECO" ${degreaserType==="SECO"?"selected":""}>SECO · 38 000 ₽ / пост</option>
             <option value="ULKA" ${degreaserType==="ULKA"?"selected":""}>ULKA · 28 000 ₽ / пост</option>
           </select></div></div>`;
+      }
 
       const perFuncs=[...selectedFuncs].map(id=>funcs.find(f=>f.id===id)).filter(Boolean);
       h+=`<div class="panel">
@@ -1506,6 +1554,10 @@ function checklist(){
   out.push([montageOn,montageOn?"Монтаж посчитан":"Монтаж не включён"]);
   const hasVac=vacOn||vacSt1On||vacSt2On;
   out.push([hasVac,hasVac?"Пылесосы добавлены":"Пылесосы не добавлены"]);
+  const incompleteNames={chem:"Дополнительные виды химии",winter:"Зимний режим",degreaser:"Обезжириватель"};
+  [...selectedFuncs].filter(funcIncomplete).forEach(id=>{
+    out.push([false,`«${incompleteNames[id]}» выбрано, но вариант не уточнён (шаг 5)`]);
+  });
   return out;
 }
 /* ==========================================================================
@@ -1722,12 +1774,13 @@ function exportExcel(){
   const blob=new Blob([wbout],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
   __offerFile(`КП ${clientName()}.xlsx`,blob).then(ok=>{if(!ok)alert("Скачивание не поддерживается в этом браузере.")});
 }
-function copyLink(){
+function copyLink(sfx){
+  sfx=sfx||"";
   const url=location.href.split("#")[0];
   const done=()=>{
-    const b=E("btnLink");if(!b)return;
+    const b=E("btnLink"+sfx);if(!b)return;
     const t=b.textContent;b.textContent="Ссылка скопирована";
-    setTimeout(()=>{if(E("btnLink"))E("btnLink").textContent=t},1800);
+    setTimeout(()=>{const b2=E("btnLink"+sfx);if(b2)b2.textContent=t},1800);
   };
   if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(url).then(done).catch(()=>prompt("Ссылка на конструктор:",url));
   else prompt("Ссылка на конструктор:",url);
@@ -1770,7 +1823,7 @@ function loadDraft(){
   pkg=packages.find(p=>p.id===s.pkg)||null;
   bum=bums.find(b=>b.id===s.bum)||null;
   payments=new Set(s.payments||[]);selectedFuncs=new Set(s.selectedFuncs||[]);
-  chemType=S(s.chemType,"");winter=S(s.winter,"1");degreaserType=S(s.degreaserType,"");
+  chemType=S(s.chemType,"");winter=S(s.winter,"");degreaserType=S(s.degreaserType,"");
   chemTypesSelected=new Set(s.chemTypes||[]);
   osmosSysOn=!!s.osmosSysOn;osmosSysId=S(s.osmosSysId,"");
   softenerOn=!!s.softenerOn;softenerPrice=+S(s.softenerPrice,0)||0;
@@ -1796,7 +1849,7 @@ function clearDraft(){
   if(!confirm("Очистить черновик и начать новое КП?"))return;
   project="";client="";contact="";posts=6;notes="";
   pkg=null;bum=null;payments.clear();selectedFuncs.clear();
-  chemType="";winter="1";degreaserType="";chemTypesSelected.clear();
+  chemType="";winter="";degreaserType="";chemTypesSelected.clear();
   osmosSysOn=false;osmosSysId="";softenerOn=false;softenerPrice=0;
   selectedExtra.clear();extraQty={};manualQty={qtySink:0,qtyTable12:0,qtyTable20:0,qtyTank:0};
   dryMistOn=false;dryMistAromas=2;dryMistPays=new Set(["cash","card","qr","client"]);cloudCashOn=false;
